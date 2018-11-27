@@ -119,22 +119,23 @@ object ScalaConverter {
         tree MATCH bufferConversion
       }
       case Schema.Type.UNION  => {
-        val types = schema.getTypes.asScala
-        // check if it's the kind of union that we support (i.e. nullable fields)
-        if (types.length != 2 ||
-           !types.map(x => x.getType).contains(Schema.Type.NULL) ||
-            types.filterNot(x => x.getType == Schema.Type.NULL).length != 1) {
-              sys.error("Unions beyond nullable fields are not supported")
-        }
-        // the union represents a nullable field, the kind of union supported in avrohugger
-        else {
-          val typeParamSchema = types.find(x => x.getType != Schema.Type.NULL).get
-          val nullConversion = CASE(NULL) ==> NONE
-          val someExpr = SOME(convertFromJava(classStore, namespace, typeParamSchema, tree, typeMatcher, classSymbol))
-          val someConversion = CASE(WILDCARD) ==> someExpr
-          val conversionCases = List(nullConversion, someConversion)
-          tree MATCH(conversionCases:_*)
-        }
+//        val types = schema.getTypes.asScala
+//        // check if it's the kind of union that we support (i.e. nullable fields)
+//        if (types.length != 2 ||
+//           !types.map(x => x.getType).contains(Schema.Type.NULL) ||
+//            types.filterNot(x => x.getType == Schema.Type.NULL).length != 1) {
+//              sys.error("Unions beyond nullable fields are not supported")
+//        }
+//        // the union represents a nullable field, the kind of union supported in avrohugger
+//        else {
+//          val typeParamSchema = types.find(x => x.getType != Schema.Type.NULL).get
+//          val nullConversion = CASE(NULL) ==> NONE
+//          val someExpr = SOME(convertFromJava(classStore, namespace, typeParamSchema, tree, typeMatcher, classSymbol))
+//          val someConversion = CASE(WILDCARD) ==> someExpr
+//          val conversionCases = List(nullConversion, someConversion)
+//          tree MATCH(conversionCases:_*)
+//        }
+        typeMatcher.toScalaType(classStore, namespace, schema)
       }
       case Schema.Type.ENUM => {
         typeMatcher.avroScalaTypes.enum match {
