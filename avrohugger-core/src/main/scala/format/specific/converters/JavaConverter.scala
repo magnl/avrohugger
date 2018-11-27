@@ -3,15 +3,15 @@ package format
 package specific
 package converters
 
+import avrohugger.format.specific.converters.ScalaConverter.convertFromJava
 import matchers.TypeMatcher
 import stores.ClassStore
 import types._
-
 import treehugger.forest._
 import definitions._
 import treehuggerDSL._
-
 import org.apache.avro.{LogicalTypes, Schema}
+
 import scala.language.postfixOps
 import scala.collection.JavaConverters._
 
@@ -27,23 +27,47 @@ object JavaConverter {
     classSymbol: ClassSymbol,
     typeMatcher: TypeMatcher): Tree = schema.getType match {
     case Schema.Type.UNION => {
-      val types = schema.getTypes.asScala
-      // check if it's the kind of union that we support (i.e. nullable fields)
-      if (types.length != 2 ||
-         !types.map(x => x.getType).contains(Schema.Type.NULL) ||
-          types.filterNot(x => x.getType == Schema.Type.NULL).length != 1) {
-        sys.error("Unions beyond nullable fields are not supported")
-      }
-      else {
-        val maybeType = types.find(x => x.getType != Schema.Type.NULL)
-        if (maybeType.isDefined) {
-        val conversionCases = List(
-          CASE(SOME(ID("x"))) ==> convertToJava(maybeType.get, REF("x"), classSymbol, typeMatcher),
-          CASE(NONE)          ==> NULL
-        )
-        tree MATCH(conversionCases:_*)
+//      val types = schema.getTypes.asScala
+//      // check if it's the kind of union that we support (i.e. nullable fields)
+//      if (types.length != 2 ||
+//         !types.map(x => x.getType).contains(Schema.Type.NULL) ||
+//          types.filterNot(x => x.getType == Schema.Type.NULL).length != 1) {
+//        sys.error("Unions beyond nullable fields are not supported")
+//      }
+//      else {
+//        val maybeType = types.find(x => x.getType != Schema.Type.NULL)
+//        if (maybeType.isDefined) {
+//        val conversionCases = List(
+//          CASE(SOME(ID("x"))) ==> convertToJava(maybeType.get, REF("x"), classSymbol, typeMatcher),
+//          CASE(NONE)          ==> NULL
+//        )
+//        tree MATCH(conversionCases:_*)
+//        }
+//        else sys.error("There was no type in this union")
+//      }
+      def unionTree(subTree: Tree, schemas: Seq[Schema]): Tree = {
+        //TODO Account for the type of mapping for unions: either, shapeless coproduct
+        schemas.size match {
+          case 1 => convertToJava(schemas.head, subTree, classSymbol, typeMatcher)
+          case 2 =>
+            val leftSchema = schemas(0)
+            val rightSchema = schemas(1)
+            val leftConversion = CASE(LEFT(ID("left"))) ==> convertToJava(leftSchema, REF("left"), classSymbol, typeMatcher)
+            val rightConversion = CASE(RIGHT(ID("right"))) ==> convertToJava(rightSchema, REF("right"), classSymbol, typeMatcher)
+            val conversionCases = List(leftConversion, rightConversion)
+            subTree MATCH(conversionCases:_*)
+          case _ => throw new IllegalArgumentException("Not Supported")
         }
-        else sys.error("There was no type in this union")
+      }
+
+      val subSchemas = schema.getTypes.asScala
+      if (subSchemas.exists(_.getType == Schema.Type.NULL)) {
+        val nullConversion = CASE(NONE) ==> NULL
+        val someConversion = CASE(SOME(ID("x"))) ==> unionTree(REF("x"), subSchemas.filter(x => x.getType != Schema.Type.NULL))
+        val conversionCases = List(nullConversion, someConversion)
+        tree MATCH (conversionCases: _*)
+      } else {
+        unionTree(tree, subSchemas)
       }
     }
     case Schema.Type.ARRAY => {

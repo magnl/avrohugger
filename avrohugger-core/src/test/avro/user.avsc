@@ -5,6 +5,8 @@
  "fields": [
      {"name": "name", "type": "string"},
      {"name": "favorite_number",  "type": ["int", "null"]},
-     {"name": "favorite_color", "type": ["string", "null"]}
+     {"name": "favorite_color", "type": ["string", "null"]},
+     {"name": "test", "type": ["string", "int"]},
+     {"name": "test2", "type": ["string", "int", "null"]}
  ]
 }

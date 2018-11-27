@@ -3,16 +3,16 @@ package format
 package specific
 package converters
 
+import avrohugger.format.specific.converters.ScalaConverter.convertFromJava
 import matchers.TypeMatcher
 import stores.ClassStore
 import types._
-
 import treehugger.forest._
 import definitions._
 import treehuggerDSL._
-
 import org.apache.avro.{LogicalTypes, Schema}
 
+import scala.PartialFunction.cond
 import scala.language.postfixOps
 import scala.collection.JavaConverters._
 
@@ -119,7 +119,37 @@ object ScalaConverter {
         tree MATCH bufferConversion
       }
       case Schema.Type.UNION  => {
-//        val types = schema.getTypes.asScala
+
+        def unionTree(subTree: Tree, schemas: Seq[Schema]): Tree = {
+          //TODO Account for the type of mapping for unions: either, shapeless coproduct
+          schemas.size match {
+            case 1 => convertFromJava(classStore, namespace, schemas.head, subTree, typeMatcher, classSymbol)
+            case 2 =>
+              val leftSchema = schemas(0)
+              val leftSchemaType = typeMatcher.toScalaType(classStore, namespace, leftSchema)
+              val rightSchema = schemas(1)
+              val rightSchemaType = typeMatcher.toScalaType(classStore, namespace, rightSchema)
+              val leftConversion = CASE(ID("left") withType leftSchemaType) ==>
+                LEFT(convertFromJava(classStore, namespace, leftSchema, REF("left"), typeMatcher, classSymbol))
+              val rightConversion = CASE(ID("right") withType rightSchemaType) ==>
+                RIGHT(convertFromJava(classStore, namespace, rightSchema, REF("right"), typeMatcher, classSymbol))
+              val conversionCases = List(leftConversion, rightConversion)
+              subTree MATCH (conversionCases: _*)
+            case _ => throw new IllegalArgumentException("Not Supported")
+          }
+        }
+
+        val subSchemas = schema.getTypes.asScala
+        if (subSchemas.exists(_.getType == Schema.Type.NULL)) {
+          val nullConversion = CASE(NULL) ==> NONE
+          val someConversion = CASE(ID("x")) ==> SOME(unionTree(REF("x"), subSchemas.filter(x => x.getType != Schema.Type.NULL)))
+          val conversionCases = List(nullConversion, someConversion)
+          tree MATCH (conversionCases: _*)
+        } else {
+          unionTree(tree, subSchemas)
+        }
+
+
 //        // check if it's the kind of union that we support (i.e. nullable fields)
 //        if (types.length != 2 ||
 //           !types.map(x => x.getType).contains(Schema.Type.NULL) ||
@@ -135,7 +165,6 @@ object ScalaConverter {
 //          val conversionCases = List(nullConversion, someConversion)
 //          tree MATCH(conversionCases:_*)
 //        }
-        typeMatcher.toScalaType(classStore, namespace, schema)
       }
       case Schema.Type.ENUM => {
         typeMatcher.avroScalaTypes.enum match {
